@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WiFi Threat Monitor — IDS</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { background:#020810; color:#c8d8e8; font-family:sans-serif; }
+
+.stat { display:inline-block; margin:10px; padding:10px; border:1px solid #0d2a3a; }
+
+.arp { color:#ff2d55; }
+.dns { color:#4da3ff; }
+.other { color:#30d158; }
+
+.alert { border-left:4px solid cyan; margin:10px; padding:10px; }
+</style>
+</head>
+
+<body>
+
+<h2>Total Alerts: <span id="total">{{ total }}</span></h2>
+
+<div class="stat arp">ARP: <span id="arp"></span></div>
+<div class="stat dns">DNS: <span id="dns"></span></div>
+<div class="stat other">Other: <span id="other"></span></div>
+
+<canvas id="chart" height="100"></canvas>
+
+<div id="alerts"></div>
+
+<script>
+
+// ✅ ONLY VALID TYPES NOW
+const VALID_TYPES = ["ARP Spoofing","DNS Spoofing"];
+
+// classify safely
+function classify(type){
+    type = (type||"").toLowerCase();
+    if(type.includes("arp")) return "ARP Spoofing";
+    if(type.includes("dns")) return "DNS Spoofing";
+    return "Other";
+}
+
+// count
+function count(data,type){
+    return data.filter(a=> classify(a.type)===type).length;
+}
+
+// render UI
+function render(data){
+
+    let arp = count(data,"ARP Spoofing");
+    let dns = count(data,"DNS Spoofing");
+    let other = data.length - arp - dns;
+
+    document.getElementById("arp").innerText = arp;
+    document.getElementById("dns").innerText = dns;
+    document.getElementById("other").innerText = other;
+    document.getElementById("total").innerText = data.length;
+
+    // chart update
+    chart.data.datasets[0].data = [arp,dns,other];
+    chart.update();
+
+    // alerts
+    let html="";
+    data.forEach(a=>{
+        let t = classify(a.type);
+        html += `
+        <div class="alert">
+            <b>${t}</b><br>
+            MAC: ${a.mac || "-"}<br>
+            Old IP: ${a.old_ip || "-"}<br>
+            New IP: ${a.new_ip || "-"}
+        </div>`;
+    });
+
+    document.getElementById("alerts").innerHTML = html;
+}
+
+// chart init
+let ctx = document.getElementById("chart").getContext("2d");
+let chart = new Chart(ctx,{
+    type:'doughnut',
+    data:{
+        labels:["ARP","DNS","Other"],
+        datasets:[{
+            data:[0,0,0]
+        }]
+    }
+});
+
+// fetch data every 5 sec
+async function load(){
+    let res = await fetch("/alerts");
+    let data = await res.json();
+
+    // 🔥 IMPORTANT FILTER
+    data = data.map(a=>{
+        a.type = classify(a.type);
+        return a;
+    });
+
+    render(data);
+}
+
+setInterval(load,5000);
+load();
+
+</script>
+
+</body>
+</html>
